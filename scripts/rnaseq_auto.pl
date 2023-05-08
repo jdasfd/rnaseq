@@ -99,23 +99,44 @@ else {
     exit(1);
 }
 
+#----------------------------------------------------------#
+# main program
+#----------------------------------------------------------#
+
 # dealing with filepath and name
 if ( $in_num == 1 ) {
     my $path_in = shift (@{$input});
-    ($name, $inpath, my $suffix) = fileparse ($path_in, @suffixlist);
+    ($name, $inpath, $suffix) = fileparse ($path_in, @suffixlist);
     if ( $suffix eq "" ) {
-        print STDERR "Error: input suffix wrong\n";
-        exit(1);
+        die "Error: input suffix wrong\n";
     }
 }
 elsif ( $in_num == 2 ) {
     my $path_in_1 = shift (@{$input});
     my $path_in_2 = shift (@{$input});
-    my ($name_1, $inpath_1, $suffix) = fileparse ($path_in_1, @suffixlist);
+    my ($name_1, $inpath_1, $suffix_1) = fileparse ($path_in_1, @suffixlist);
+    my ($name_2, $inpath_2, $suffix_2) = fileparse ($path_in_2, @suffixlist);
+    if ( $suffix_1 eq "" || $suffix_2 eq "" ) {
+        die "Error: input suffix wrong\n";
+    }
+    elsif ( $inpath_1 ne $inpath_2) {
+        die "Error: input path not consistent\n";
+    }
+    else {
+        my $n1 = $1 if $name_1 =~ /^(.+?)_\d/;
+        my $n2 = $1 if $name_2 =~ /^(.+?)_\d/;
+        if ( $n1 eq $n2 ) {
+            $name = $n1;
+            $inpath = $inpath_1;
+            $suffix = $suffix_1;
+        }
+        else {
+            die "Error: input name not consistent\n";
+        }
+    }
 }
 else {
-    print STDERR "Error: input exceed the range\n";
-    exit(1);
+    die "Error: input exceed the range\n";
 }
 
 # outdir
@@ -124,26 +145,22 @@ if ( ! -d $outdir ) {
     mkdir $outdir;
 }
 
-#----------------------------------------------------------#
-# main program
-#----------------------------------------------------------#
-
-=pod
 # trim_galore
 if ( $type eq "SE" ) {
-    $result = &trim_galore_SE($filepath);
+    my $trim_in = $inpath.$name.$suffix;
+    $result = &trim_galore_SE($trim_in);
 }
 elsif ( $type eq "PE" ) {
-    $result = &trim_galre_PE($filepath_1,$filepath_2);
+    my $trim_in_1 = $inpath.$name."_1".$suffix;
+    my $trim_in_2 = $inpath.$name."_2".$suffix;
+    $result = &trim_galre_PE($trim_in_1,$trim_in_2);
 }
 
 if ( $result != 0 ) {
-    print STDERR "Error: trim_galore wrong\n";
-    exit(1);
+    die "Error: trim_galore wrong\n";
 }
-=cut
 
-=pod
+
 #----------------------------------------------------------#
 # sub-program
 #----------------------------------------------------------#
@@ -168,4 +185,3 @@ sub featureCounts {
     my ($annotation, $thread, $name) = @_;
 #    featureCounts -T 10 -t gene -G Name
 }
-=cut
