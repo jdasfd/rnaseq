@@ -111,6 +111,19 @@ elsif ( $in_num == 2 ) {
     }
 }
 else {
+    die "Error: input exceed the range\n";
+}
+
+# check index
+my ($genom_name, $genom_path, $genom_suffix) = fileparse ($genome, @genomsuffix);
+if ( glob ("$genom_path"."$genom_name"."*.ht2") ) {
+    print STDERR "==> hisat2 index exists";
+}
+else {
+    $result_idx = &ht2_index ($genom_name, $genom_path, $genom_suffix, $thread);
+    if ( $result != 0 ) {
+        die "Error: hisat-index wrong, aborted\n";
+    }
 }
 
 #----------------------------------------------------------#
@@ -190,9 +203,19 @@ sub trim_galore_SE {
 sub trim_galre_PE {
     my ($file_5, $file_3) = @_;
     print STDERR "==> Trimming adapter for PE\n";
-    print "$file_5, $file_3\n";
-    #my $result = system "trim_galore -j 4 -q 30 --fastqc --length 20 --paired $file_5 $file_3 -o $outdir";
+    my $result = system "trim_galore -j 4 -q 30 --fastqc --length 20 --paired $file_5 $file_3 -o $outdir";
     return $result;
+}
+
+sub ht2_index {
+    my ($genom, $path, $suffix, $thread) = @_;
+    print STDERR "==> hisat2 genome indexing\n";
+    my $result = system "hisat2-build -p $thread $genom"."$suffix $path"."$genom";
+    return $result;
+}
+
+sub ht2_align {
+    my $file =
 }
 
 sub featureCounts {
