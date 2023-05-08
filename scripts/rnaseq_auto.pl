@@ -45,17 +45,14 @@ rnaseq_auto.pl - automatically extract reads count from raw RNA-seq files
 
 =cut
 
-# all global variables
-my $result;
-my ($name, $inpath);
-my @suffixlist = (".fastq.gz", ".fastq.bz2", ".fastq", ".fq.gz", ".fq.bz2", ".fq");
-
 GetOptions(
-    "i|in=s@"       => \(my $input),
-    "w|workdir"     => \(my $workdir),
-    "t|type=s"      => \(my $type = 'SE'),
-    "thread=s"      => \(my $thread = '1'),
-    "h|help"        => sub { Getopt::Long::HelpMessage(0) },
+    "i|in=s@"           => \(my $input),
+    "w|workdir"         => \(my $workdir),
+    "t|type=s"          => \(my $type = 'SE'),
+    "thread=s"          => \(my $thread = '1'),
+    "g|genome=s"        => \(my $genome),
+    "a|annotation=s"    => \(my $annotation),
+    "h|help"            => sub { Getopt::Long::HelpMessage(0) },
 ) or Getopt::Long::HelpMessage(1);
 
 if ( ! @{$input} ) {
@@ -71,9 +68,29 @@ if ( $type ne "SE" && $type ne "PE") {
     die Getopt::Long::HelpMessage(1);
 }
 
+if ( !defined $genome ) {
+    die Getopt::Long::HelpMessage(1);
+}
+elsif ( ! path($genome) -> is_file ) {
+    die "Error: can't find file [$genome]";
+}
+
+if ( !defined $annotation ) {
+    die Getopt::Long::HelpMessage(1);
+}
+elsif ( ! path($annotation) -> is_file ) {
+    die "Error: can't find file [$annotation]";
+}
+
 #----------------------------------------------------------#
 # init
 #----------------------------------------------------------#
+
+# all global variables
+my $result;
+my ($name, $inpath, $suffix);
+my @suffixlist = (".fastq.gz", ".fastq.bz2", ".fastq", ".fq.gz", ".fq.bz2", ".fq");
+my @genomsuffix = ("fasta", "fa");
 
 # mode selection
 my $in_num = @{$input};
@@ -82,8 +99,7 @@ if ( $in_num == 1 ) {
         print STDERR "==> SE mode detected\n";
     }
     else {
-        print STDERR "PE mode with only an input file, error\n";
-        exit(1);
+        die "Error: PE mode with only an input file\n";
     }
 }
 elsif ( $in_num == 2 ) {
@@ -91,12 +107,10 @@ elsif ( $in_num == 2 ) {
         print STDERR "==> PE mode detected\n";
     }
     else {
-        print STDERR "SE mode with two input files, error\n";
+        die "Error: SE mode with two input files, error\n";
     }
 }
 else {
-    print STDERR "Error: input exceed the range\n";
-    exit(1);
 }
 
 #----------------------------------------------------------#
