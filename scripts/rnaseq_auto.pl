@@ -33,29 +33,37 @@ rnaseq_auto.pl - automatically extract reads count from raw RNA-seq files
     Automatically extracting gene counts from raw RNA-seq files.
 
     Usage:
-    perl rnaseq_auto.pl -i <filename>
-    perl rnaseq_auto.pl -i <filename_1> -i <filename_2> -t PE
+    perl rnaseq_auto.pl -i <filename> -g <genome> -a <annotation> [options]
+    perl rnaseq_auto.pl -t PE -i <filename_1> -i <filename_2> -g <genome> -a <annotation> [options]
 
 
     Options:
-    -i,--in         input file (also accept .gz format), required
-    -w,--workdir    working directories, default is the current path
-    -t,--type       RNA-seq in single end (SE) or paired end (PE) mode, default: SE
-    -h,--help       help information
+    -i,--in             input file (also accept .gz format), required
+    -g,--genome         reference genome for hisat2 alignment, required
+    -a,--annotation     annotation files for featureCount, required
+    -w,--workdir        working directories, default is the current path
+    -t,--type           RNA-seq in single end (SE) or paired end (PE) mode, default: SE
+    --thread            threads for hisat2 and featureCount, default: 1
+    -h,--help           help information
 
 =cut
 
 GetOptions(
     "i|in=s@"           => \(my $input),
+    "g|genome=s"        => \(my $genome),
+    "a|annotation=s"    => \(my $annotation),
     "w|workdir"         => \(my $workdir),
     "t|type=s"          => \(my $type = 'SE'),
     "thread=s"          => \(my $thread = '1'),
-    "g|genome=s"        => \(my $genome),
-    "a|annotation=s"    => \(my $annotation),
     "h|help"            => sub { Getopt::Long::HelpMessage(0) },
 ) or Getopt::Long::HelpMessage(1);
 
-if ( ! @{$input} ) {
+if ( !defined $input) {
+    print STDERR "Error: cannot find input files\n";
+    die Getopt::Long::HelpMessage(1);
+}
+elsif ( ! @{$input} ) {
+    print STDERR "Error: cannot find input files\n";
     die Getopt::Long::HelpMessage(1);
 }
 
@@ -69,17 +77,19 @@ if ( $type ne "SE" && $type ne "PE") {
 }
 
 if ( !defined $genome ) {
+    print STDERR "Error: cannot find genome\n";
     die Getopt::Long::HelpMessage(1);
 }
 elsif ( ! path($genome) -> is_file ) {
-    die "Error: can't find file [$genome]";
+    die "Error: cannot open file [$genome]";
 }
 
 if ( !defined $annotation ) {
+    print STDERR "Error: cannot find annotation\n";
     die Getopt::Long::HelpMessage(1);
 }
 elsif ( ! path($annotation) -> is_file ) {
-    die "Error: can't find file [$annotation]";
+    die "Error: cannot open file [$annotation]";
 }
 
 #----------------------------------------------------------#
@@ -87,10 +97,10 @@ elsif ( ! path($annotation) -> is_file ) {
 #----------------------------------------------------------#
 
 # all global variables
-my $result;
-my ($name, $inpath, $suffix);
+my ($name, $inpath, $suffix, $out_name);
 my @suffixlist = (".fastq.gz", ".fastq.bz2", ".fastq", ".fq.gz", ".fq.bz2", ".fq");
 my @genomsuffix = ("fasta", "fa");
+my @feature;
 
 # mode selection
 my $in_num = @{$input};
@@ -116,19 +126,28 @@ else {
 
 # check index
 my ($genom_name, $genom_path, $genom_suffix) = fileparse ($genome, @genomsuffix);
+my $genom_ref = $genom_path.$genom_name;
+$genom_ref =~ s/\.$//;
 if ( glob ("$genom_path"."$genom_name"."*.ht2") ) {
-    print STDERR "==> hisat2 index exists";
+    print STDERR "==> hisat2 index exists\n";
 }
 else {
-    $result_idx = &ht2_index ($genom_name, $genom_path, $genom_suffix, $thread);
-    if ( $result != 0 ) {
+    my $result_idx = &ht2_index ($genom_name, $genom_path, $genom_suffix, $thread);
+    if ( $result_idx != 0 ) {
         die "Error: hisat-index wrong, aborted\n";
     }
 }
 
-#----------------------------------------------------------#
-# main program
-#----------------------------------------------------------#
+# check gtf
+if ( $annotation =~ /\.gff$/ ) {
+    print STDERR "==> Converting gff to gtf via gffread\n";
+    my $gffpath = dirname ($annotation);
+    my $gtf = "$gffpath"."/"."$genom_name".".gtf";
+    system "gffread $annotation -T -o $gtf";
+}
+elsif ( $annotation =~ /\.gtf/ ) {
+    print STDERR "==> Annotation gtf already exists\n";
+}
 
 # dealing with filepath and name
 if ( $in_num == 1 ) {
@@ -172,21 +191,82 @@ if ( ! -d $outdir ) {
     mkdir $outdir;
 }
 
+$out_name = $outdir."/".$name;
+
+#----------------------------------------------------------#
+# main program
+#----------------------------------------------------------#
+
 # trim_galore
 if ( $type eq "SE" ) {
     my $trim_in = $inpath.$name.$suffix;
-    $result = &trim_galore_SE($trim_in);
+    if ( ! glob $out_name."*_trimmed*" ) {
+        my $result_trim = &trim_galore_SE($trim_in, $outdir);
+        if ( $result_trim != 0 ) {
+            die "Error: trim_galore wrong\n";
+        }
+    }
 }
 elsif ( $type eq "PE" ) {
     my $trim_in_1 = $inpath.$name."_1".$suffix;
     my $trim_in_2 = $inpath.$name."_2".$suffix;
-    $result = &trim_galre_PE($trim_in_1,$trim_in_2);
+    if ( ! glob $out_name."*_val*" ) {
+        my $result_trim = &trim_galre_PE($trim_in_1,$trim_in_2, $outdir);
+        if ( $result_trim != 0 ) {
+            die "Error: trim_galore wrong\n";
+        }
+    }
 }
 
-if ( $result != 0 ) {
-    die "Error: trim_galore wrong\n";
+# ht2-align
+if ( $type eq "SE" ) {
+    my $ht_in = $out_name."_trimmed.fq.gz";
+    my $ht_out = $out_name.".tmp.sam";
+    if ( ! glob $out_name."*.sam" ) {
+        my $result_ht = &ht2_align_SE($ht_in, $ht_out, $genom_ref, $thread);
+        if ( $result_ht != 0 ) {
+            die "Error: hisat align wrong\n";
+        }
+    }
+}
+elsif ( $type eq "PE" ) {
+    my $ht_in_1 = $out_name."_1_val_1.fq.gz";
+    my $ht_in_2 = $out_name."_2_val_2.fq.gz";
+    my $ht_out = $out_name.".tmp.sam";
+    if ( ! glob $out_name."*.sam" ) {
+        my $result_ht = &ht2_align_PE($ht_in_1, $ht_in_2, $ht_out, $genom_ref, $thread);
+        if ( $result_ht != 0 ) {
+            die "Error: hisat align wrong\n";
+        }
+    }
 }
 
+# sam2bam
+if ( ! glob $out_name."*.sort.bam" ) {
+    my $samfile = $out_name.".tmp.sam";
+    my $bamfile = $out_name.".sort.bam";
+    system "samtools sort -@ $thread $samfile > $bamfile";
+    system "samtools index $bamfile";
+    path($samfile) -> remove;
+}
+
+# feature counts
+my $countfile = $out_name.".tmp.tsv";
+my $featurefile = $out_name.".count.tsv";
+my $bamfile = $out_name.".sort.bam";
+system "featureCounts -T $thread -a $annotation -o $countfile $bamfile";
+
+open my $TSV_IN, "<", $countfile;
+while ( <$TSV_IN> ) {
+    chomp;
+    next if /^#/;
+    my @array = split/\t/, $_;
+    my $print = "$array[0]\t$array[6]\n";
+    push (@feature, $print);
+}
+close $TSV_IN;
+
+path("$featurefile") -> spew(@feature);
 
 #----------------------------------------------------------#
 # sub-program
@@ -194,31 +274,39 @@ if ( $result != 0 ) {
 
 # trim_galore 4 cores is the best
 sub trim_galore_SE {
-    my $file = shift;
+    my ($file, $out) = @_;
     print STDERR "==> Trimming adapter for SE\n";
-    my $result = system "trim_galore -j 4 -q 30 --fastqc --length 20 $file -o $outdir";
+    my $result = system "trim_galore -j 4 -q 30 --fastqc --length 20 $file -o $out";
     return $result;
 }
 
 sub trim_galre_PE {
-    my ($file_5, $file_3) = @_;
+    my ($file_5, $file_3, $out) = @_;
     print STDERR "==> Trimming adapter for PE\n";
-    my $result = system "trim_galore -j 4 -q 30 --fastqc --length 20 --paired $file_5 $file_3 -o $outdir";
+    my $result = system "trim_galore -j 4 -q 30 --fastqc --length 20 --paired $file_5 $file_3 -o $out";
     return $result;
 }
 
 sub ht2_index {
-    my ($genom, $path, $suffix, $thread) = @_;
-    print STDERR "==> hisat2 genome indexing\n";
-    my $result = system "hisat2-build -p $thread $genom"."$suffix $path"."$genom";
+    my ($GENOM, $PATH, $SUFFIX, $THREAD) = @_;
+    my $NAME = $1 if $GENOM =~ /^(.+?)\./;
+    my $OLD = "$PATH"."$GENOM"."$SUFFIX";
+    my $NEW = "$PATH"."$NAME";
+    print STDERR "==> Hisat2 genome indexing\n";
+    my $result = system "hisat2-build -p $THREAD $OLD $NEW";
     return $result;
 }
 
-sub ht2_align {
-    my $file =
+sub ht2_align_SE {
+    my ($HT_IN, $HT_OUT, $REF, $THREAD) = @_;
+    print STDERR "==> Hisat2 alignment SE mode\n";
+    my $result = system "hisat2 -p $THREAD -x $REF -U $HT_IN -S $HT_OUT";
+    return $result;
 }
 
-sub featureCounts {
-    my ($annotation, $thread, $name) = @_;
-#    featureCounts -T 10 -t gene -G Name
+sub ht2_align_PE {
+    my ($HT_IN_1, $HT_IN_2, $HT_OUT, $REF, $THREAD) = @_;
+    print STDERR "==> Hisat2 alignment PE mode\n";
+    my $result = system "hisat2 -p $THREAD -x $REF -1 $HT_IN_1 -2 $HT_IN_2 -S $HT_OUT";
+    return $result;
 }
