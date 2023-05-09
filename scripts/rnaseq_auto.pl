@@ -40,7 +40,7 @@ rnaseq_auto.pl - automatically extract reads count from raw RNA-seq files
     Options:
     -i,--in             input file (also accept .gz format), required
     -g,--genome         reference genome for hisat2 alignment, required
-    -a,--annotation     annotation files for featureCount, required
+    -a,--annotation     annotation files - both gtf and gff acceptable, required
     -w,--workdir        working directories, default is the current path
     -t,--type           RNA-seq in single end (SE) or paired end (PE) mode, default: SE
     --thread            threads for hisat2 and featureCount, default: 1
@@ -247,14 +247,14 @@ if ( ! glob $out_name."*.sort.bam" ) {
     my $bamfile = $out_name.".sort.bam";
     system "samtools sort -@ $thread $samfile > $bamfile";
     system "samtools index $bamfile";
-    path($samfile) -> remove;
+    path($samfile) -> remove if glob $out_name.".tmp.sam";
 }
 
 # feature counts
 my $countfile = $out_name.".tmp.tsv";
 my $featurefile = $out_name.".count.tsv";
 my $bamfile = $out_name.".sort.bam";
-system "featureCounts -T $thread -a $annotation -o $countfile $bamfile";
+system "featureCounts -T $thread -a $annotation -o $countfile $bamfile" if ! glob $featurefile;
 
 open my $TSV_IN, "<", $countfile;
 while ( <$TSV_IN> ) {
