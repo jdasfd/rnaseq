@@ -5,10 +5,16 @@ sudo apt install trim-galore
 ```bash
 brew install brewsci/bio/subread
 brew install brewsci/bio/hisat2
+brew install brewsci/bio/gffread
+brew install samtools
 ```
 
 ```bash
-mkdir rnaseq
+mkdir ~/data/rnaseq/GENOMES
+```
+
+```bash
+cd ~/data/rnaseq
 cat *.txt | wc -l
 #441
 
