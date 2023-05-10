@@ -129,12 +129,12 @@ my ($genom_name, $genom_path, $genom_suffix) = fileparse ($genome, @genomsuffix)
 my $genom_ref = $genom_path.$genom_name;
 $genom_ref =~ s/\.$//;
 if ( glob ("$genom_path"."$genom_name"."*.ht2") ) {
-    print STDERR "==> hisat2 index exists\n";
+    print STDERR "==> Hisat2 index exists\n";
 }
 else {
     my $result_idx = &ht2_index ($genom_name, $genom_path, $genom_suffix, $thread);
     if ( $result_idx != 0 ) {
-        die "Error: hisat-index wrong, aborted\n";
+        die "Error: Hisat-index wrong, aborted\n";
     }
 }
 
@@ -222,39 +222,49 @@ elsif ( $type eq "PE" ) {
 if ( $type eq "SE" ) {
     my $ht_in = $out_name."_trimmed.fq.gz";
     my $ht_out = $out_name.".tmp.sam";
-    if ( ! glob $out_name."*.sam" ) {
+    if ( ! glob $ht_out || ! glob $out_name.".sort.bam" ) {
         my $result_ht = &ht2_align_SE($ht_in, $ht_out, $genom_ref, $thread);
         if ( $result_ht != 0 ) {
             die "Error: hisat align wrong\n";
         }
+    }
+    else {
+        print STDERR "==> Hisat2 align result exists\n";
     }
 }
 elsif ( $type eq "PE" ) {
     my $ht_in_1 = $out_name."_1_val_1.fq.gz";
     my $ht_in_2 = $out_name."_2_val_2.fq.gz";
     my $ht_out = $out_name.".tmp.sam";
-    if ( ! glob $out_name."*.sam" ) {
+    if ( ! glob $ht_out || ! glob $out_name.".sort.bam" ) {
         my $result_ht = &ht2_align_PE($ht_in_1, $ht_in_2, $ht_out, $genom_ref, $thread);
         if ( $result_ht != 0 ) {
             die "Error: hisat align wrong\n";
         }
     }
+    else {
+        print STDERR "==> Hisat2 align result exists\n";
+    }
 }
 
 # sam2bam
-if ( ! glob $out_name."*.sort.bam" ) {
+my $bamfile = $out_name.".sort.bam";
+if ( ! glob $bamfile ) {
+    print STDERR "==> Sam to bam converting\n";
     my $samfile = $out_name.".tmp.sam";
-    my $bamfile = $out_name.".sort.bam";
     system "samtools sort -@ $thread $samfile > $bamfile";
     system "samtools index $bamfile";
     path($samfile) -> remove if glob $out_name.".tmp.sam";
+}
+else {
+    print STDERR "==> Bam file exists\n";
 }
 
 # feature counts
 my $countfile = $out_name.".tmp.tsv";
 my $featurefile = $out_name.".count.tsv";
-my $bamfile = $out_name.".sort.bam";
-system "featureCounts -T $thread -a $annotation -o $countfile $bamfile" if ! glob $featurefile;
+print STDERR "==> Counting reads via featureCounts\n";
+system "featureCounts -T $thread -a $annotation -o $countfile $bamfile";
 
 open my $TSV_IN, "<", $countfile;
 while ( <$TSV_IN> ) {
