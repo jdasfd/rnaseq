@@ -1,127 +1,123 @@
 # Breast cancer RNA-seq data
 
+Extract KEGG pathway genelist expression matrix from a breast cancer article. Article link: [Cell, 2016, 164: 293-309](https://www.cell.com/cell/fulltext/S0092-8674(15)01624-4?_returnURL=https%3A%2F%2Flinkinghub.elsevier.com%2Fretrieve%2Fpii%2FS0092867415016244%3Fshowall%3Dtrue).
+
+## Preparation
+
+- Software
+
 ```bash
+cd ~/Scripts
 git clone https://github.com/wang-q/fig_table.git
-brew install dos2unix
+# check how to use the script
+perl ~/Scripts/fig_table/xlsx2csv.pl -h
 ```
 
-Article link: [Cell, 2016, 164: 293-309](https://www.cell.com/cell/fulltext/S0092-8674(15)01624-4?_returnURL=https%3A%2F%2Flinkinghub.elsevier.com%2Fretrieve%2Fpii%2FS0092867415016244%3Fshowall%3Dtrue)
+- [Convert CR 2 LF](https://toolslick.com/conversion/text/new-line). The web-tool for converting CR to LF EOF.
 
-[Convert CR 2 LF](https://toolslick.com/conversion/text/new-line).
+- R packages
 
 ```bash
-mkdir -p ~/data/rna_bc/article_SM
-cd ~/data/rna_bc/article_SM
+Rscript -e '
+    BiocManager::install("KEGGREST")
+    BiocManager::install("EnrichmentBrowser")
+    '
+```
 
-# download supplementary tables into the dir
+## Data derived from the origin analyzation
 
-# extract cell and its subtype info
-cat cell_line_subtypes.tsv |
-    tsv-select -H -f cell_line,subtype_neve \
-    > cell_anno.tsv
+### Extract all necessary data
 
-#perl ~/Scripts/fig_table/xlsx2csv.pl -f 1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3B | sed '1,4d' | tsv-select -d ',' -f 1,5,9,13 | sed 1d | sed '1ibasal_A,basal_B,her,luminal' | mlr --icsv --otsv cat > gene_neve.tsv
+- Data orginated from [neellab/bfg](https://github.com/neellab/bfg/tree/gh-pages).
 
-# extract each gene pathway
-# basal_A
-perl ~/Scripts/fig_table/xlsx2csv.pl \
-    -f 1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3H |
-    sed '1,2d' |
-    mlr --icsv --otsv cat |
-    tsv-select -H -f "Pathway\ id" |
-    sed 1d \
-    > basal_A_pathway.lst
+```bash
+mkdir -p ~/data/rna_bc
+cd ~/data/rna_bc
 
-perl ~/Scripts/fig_table/xlsx2csv.pl \
-    -f 1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3H |
-    sed '1,2d' |
-    mlr --icsv --otsv cat |
-    tsv-select -H -f "Genes" |
-    sed 1d |
-    tr "," "\n" |
-    sort |
-    uniq \
-    > basal_A_gene.lst
+# bfg
+git clone https://github.com/neellab/bfg.git
+```
 
-# basal_B
-perl ~/Scripts/fig_table/xlsx2csv.pl \
-    -f 1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3I |
-    sed '1,2d' |
-    mlr --icsv --otsv cat |
-    tsv-select -H -f "Pathway\ id" |
-    sed 1d \
-    > basal_B_pathway.lst
+- Info derived from article supplementary.
 
-perl ~/Scripts/fig_table/xlsx2csv.pl \
-    -f 1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3I |
-    sed '1,2d' |
-    mlr --icsv --otsv cat |
-    tsv-select -H -f "Genes" |
-    sed 1d |
-    tr "," "\n" |
-    sort |
-    uniq \
-    > basal_B_gene.lst
+The data was collected from the supplementary material directly. All `.xlsx` were collected into `article_SM`.
 
-# HER2
-perl ~/Scripts/fig_table/xlsx2csv.pl \
-    -f 1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3J |
-    sed '1,2d' |
-    mlr --icsv --otsv cat |
-    tsv-select -H -f "Pathway\ id" |
-    sed 1d \
-    > HER2_pathway.lst
+```bash
+mkdir -p ~/data/rna_bc/info
+cd ~/data/rna_bc/info
 
-perl ~/Scripts/fig_table/xlsx2csv.pl \
-    -f 1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3J |
-    sed '1,2d' |
-    mlr --icsv --otsv cat |
-    tsv-select -H -f "Genes" |
-    sed 1d |
-    tr "," "\n" |
-    sort |
-    uniq \
-    > HER2_gene.lst
+cp ../bfg/data/annotations/cell_line_subtypes.txt.zip .
+cp ../bfg/data/rnaseq/breast_rnaseq_fpkm_nonnormalized.txt.zip .
+cp ../bfg/data/rnaseq/breast_rnaseq_qn.txt.zip .
 
-# Luminal
-perl ~/Scripts/fig_table/xlsx2csv.pl \
-    -f 1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3K |
-    sed '1,2d' |
-    mlr --icsv --otsv cat |
-    tsv-select -H -f "Pathway\ id" |
-    sed 1d \
-    > Luminal_pathway.lst
+rm -rf __MACOSX/
+rm *.zip
 
-perl ~/Scripts/fig_table/xlsx2csv.pl \
-    -f 1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3K |
-    sed '1,2d' |
-    mlr --icsv --otsv cat |
-    tsv-select -H -f "Genes" |
-    sed 1d |
-    tr "," "\n" |
-    sort |
-    uniq \
-    > Luminal_gene.lst
-
-for group in basal_A basal_B HER2 Luminal
+# converting cr2lf
+for file in cell_line_subtypes breast_rnaseq_qn
 do
-    # combine into pathway
-    cat ${group}_pathway.lst |
-        awk -v GR=$group '{print (GR"\t"$0)}' \
-        >> pathway.tsv
-    
-    # combine into gene pathway
-    cat ${group}_gene.lst |
-        awk -v GR=$group '{print (GR"\t"$0)}' \
-        >> gene.tsv
+cat ${file}.txt | tr "\r" "\n" > tmp && mv tmp ${file}.txt
+echo >> ${file}.txt
 done
 
-wc -l *_pathway.lst
-#  264 HER2_pathway.lst
-#   69 Luminal_pathway.lst
-#  580 basal_A_pathway.lst
-#   90 basal_B_pathway.lst
-# 1003 total
+# extract cell and its subtype info
+cat cell_line_subtypes.txt |
+    tsv-select -H -f cell_line,subtype_neve |
+    perl -nlae '
+        print if /^cell_line/;
+        print "$F[0]\tbasal_A" if $F[1] =~ /basala/;
+        print "$F[0]\tbasal_B" if $F[1] =~ /basalb/;
+        print "$F[0]\tHER2" if $F[1] =~ /her2/;
+        print "$F[0]\tLuminal" if $F[1] =~ /luminal/;
+    '\
+    > cell_anno.tsv
+
+cat > tmp.tsv << EOF 
+$(echo -e "H\tbasal_A")
+$(echo -e "I\tbasal_B")
+$(echo -e "J\tHER2")
+$(echo -e "K\tLuminal")
+EOF
+
+# extract each gene pathway
+rm pathway.tsv gene.tsv
+cat tmp.tsv |
+    parallel -j 1 --colsep "\t" '
+        perl ~/Scripts/fig_table/xlsx2csv.pl \
+            -f ../article_SM/1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3{1} |
+            sed "1,2d" |
+            mlr --icsv --otsv cat |
+            tsv-select -H -f "Pathway\ id" |
+            sed 1d |
+            awk -v GROUP={2} '\''{print ($0"\t"GROUP)}'\'' \
+            >> pathway.tsv
+        perl ~/Scripts/fig_table/xlsx2csv.pl \
+            -f ../article_SM/1-s2.0-S0092867415016244-mmc4.xlsx --sheet S3{1} |
+            sed "1,2d" |
+            mlr --icsv --otsv cat |
+            tsv-select -H -f "Genes" |
+            sed 1d |
+            tr "," "\n" |
+            sort |
+            uniq |
+            awk -v GROUP={2} '\''{print ($0"\t"GROUP)}'\'' \
+            >> gene.tsv
+    '
+rm tmp.tsv
+
+cat pathway.tsv | tsv-summarize -g 2 --count
+#basal_A 580
+#basal_B 90
+#HER2    264
+#Luminal 69
+
+cat gene.tsv | tsv-summarize -g 2 --count
+#basal_A 238
+#basal_B 104
+#HER2    139
+#Luminal 83
+```
+
 
 cat pathway.tsv | cut -f 2 | sort | uniq | wc -l
 #825
