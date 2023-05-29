@@ -118,53 +118,27 @@ cat gene.tsv | tsv-summarize -g 2 --count
 #Luminal 83
 ```
 
+### Extract KEGG pathway via R
 
-cat pathway.tsv | cut -f 2 | sort | uniq | wc -l
-#825
-# pathway info has the repeated part
+```bash
+cd ~/data/rna_bc/info
 
-wc -l *_gene.lst
-# 139 HER2_gene.lst
-#  83 Luminal_gene.lst
-# 238 basal_A_gene.lst
-# 104 basal_B_gene.lst
-# 564 total
+# using KEGGREST
+Rscript ../../rnaseq/scripts/kegg_extract.r hsa05224
+```
 
-cat gene.tsv | cut -f 2 | sort | uniq | wc -l
-#544
-# about 20 genes repeated into each other
+### Extract expression matrices
 
-# extract related gene expression matrices
-cat breast_rnaseq_fpkm_nonnormalized.txt |
-    tsv-select -H -e gene_id,ensembl_id |
-    tsv-join -H -f <(
-        cat gene.tsv |
-        cut -f 2 |
-        sort |
-        uniq |
-        sed '1isymbol'
-        ) -k symbol \
-    > matrix_exp.tsv
+```bash
+cd ~/data/rna_bc/info
 
-Rscript -e '
-    library("KEGGREST")
-    library("EnrichmentBrowser")
-    hsapathway <- downloadPathways("hsa")
-    hsa <- getGenesets(org = "hsa", db = "kegg", gene.id.type = "SYMBOL",cache = TRUE, return.type="list")
-    genelist <- hsa$hsa05224
-    write.table(genelist, sep = "\t", file = "hsa05224.tsv")
-'
-
-cat hsa05224.tsv |
-    cut -f 2 |
-    sed 1d |
-    perl -nle 'print "$1" if /^"(.+)"$/;' \
-    > hsa05224_gene.lst
-
-cat breast_rnaseq_fpkm_nonnormalized.txt |
-    tsv-join -H -f <(
-        cat hsa05224_gene.lst |
-        sed '1isymbol'
-        ) -k symbol \
-    > hsa05224_exp.tsv
+for group in fpkm_nonnormalized qn
+do
+    cat breast_rnaseq_${group}.txt |
+        tsv-join -H -f <(
+            cat hsa05224.lst |
+            sed '1isymbol'
+            ) -k symbol \
+        > hsa05224_${group}.tsv
+done
 ```
