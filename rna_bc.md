@@ -31,8 +31,8 @@ Rscript -e '
 - Data orginated from [neellab/bfg](https://github.com/neellab/bfg/tree/gh-pages).
 
 ```bash
-mkdir -p ~/data/rna_bc
-cd ~/data/rna_bc
+mkdir -p ~/data/rnaseq/rna_bc
+cd ~/data/rnaseq/rna_bc
 
 # bfg
 git clone https://github.com/neellab/bfg.git
@@ -43,12 +43,12 @@ git clone https://github.com/neellab/bfg.git
 The data was collected from the supplementary material directly. All `.xlsx` were collected into `article_SM`.
 
 ```bash
-mkdir -p ~/data/rna_bc/info
-cd ~/data/rna_bc/info
+mkdir -p ~/data/rnaseq/rna_bc/info
+cd ~/data/rnaseq/rna_bc/info
 
 cp ../bfg/data/annotations/cell_line_subtypes.txt.zip .
-cp ../bfg/data/rnaseq/breast_rnaseq_fpkm_nonnormalized.txt.zip .
-cp ../bfg/data/rnaseq/breast_rnaseq_qn.txt.zip .
+cp ../bfg/data/breast_rnaseq_fpkm_nonnormalized.txt.zip .
+cp ../bfg/data/breast_rnaseq_qn.txt.zip .
 
 rm -rf __MACOSX/
 rm *.zip
@@ -121,16 +121,16 @@ cat gene.tsv | tsv-summarize -g 2 --count
 ### Extract KEGG pathway via R
 
 ```bash
-cd ~/data/rna_bc/info
+cd ~/data/rnaseq/rna_bc/info
 
 # using KEGGREST
-Rscript ../../rnaseq/scripts/kegg_extract.r hsa05224
+Rscript ../../scripts/kegg_extract.r hsa05224
 ```
 
 ### Extract expression matrices
 
 ```bash
-cd ~/data/rna_bc/info
+cd ~/data/rnaseq/rna_bc/info
 
 for group in fpkm_nonnormalized qn
 do
@@ -138,7 +138,10 @@ do
         tsv-join -H -f <(
             cat hsa05224.lst |
             sed '1isymbol'
-            ) -k symbol \
+            ) -k symbol |
+        datamash transpose |
+        sed 2,3d |
+        perl -pe 's/symbol/cell_line/' \
         > hsa05224_${group}.tsv
 done
 ```
