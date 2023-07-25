@@ -12,6 +12,7 @@
 #   Version 1.0.1 23/07/25: Bug fixes: featureCounts cannot read the attribute;
 #                                      gff2gtf name error;
 #                                      mkdir error reported by trim-galore.
+#                                      genome suffix wrong for ht2-index error.
 
 use strict;
 use warnings;
@@ -134,7 +135,6 @@ else {
 # check index
 my ($genom_name, $genom_path, $genom_suffix) = fileparse ($genome, @genomsuffix);
 my $genom_ref = $genom_path.$genom_name;
-$genom_ref =~ s/\.$//;
 if ( glob ("$genom_path"."$genom_name"."*.ht2") ) {
     print STDERR "==> Hisat2 index exists\n";
 }
@@ -196,8 +196,11 @@ else {
 my $outdir;
 if ( path($workdir) -> is_dir ){
     $outdir = $workdir."/result";
-    if ( path($outdir) -> is_dir ) {
+    if ( !path($outdir) -> is_dir ) {
         path($outdir) -> mkdir;
+    }
+    else {
+        print STDERR "$workdir is ready.\n";
     }
 }
 else {
@@ -317,9 +320,8 @@ sub trim_galre_PE {
 
 sub ht2_index {
     my ($GENOM, $PATH, $SUFFIX, $THREAD) = @_;
-    my $NAME = $1 if $GENOM =~ /^(.+?)\./;
     my $OLD = "$PATH"."$GENOM"."$SUFFIX";
-    my $NEW = "$PATH"."$NAME";
+    my $NEW = "$PATH"."$GENOM";
     print STDERR "==> Hisat2 genome indexing\n";
     my $result = system "hisat2-build -p $THREAD $OLD $NEW";
     return $result;
