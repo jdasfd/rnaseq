@@ -9,7 +9,9 @@
 #
 #   Change logs:
 #   Version 1.0.0 23/05/06: The initial version.
-
+#   Version 1.0.1 23/07/25: Bug fixes: featureCounts cannot read the attribute;
+#                                      gff2gtf name error;
+#                                      mkdir error reported by trim-galore.
 
 use strict;
 use warnings;
@@ -29,22 +31,26 @@ rnaseq_auto.pl - automatically extract reads count from raw RNA-seq files
 
 =head1 SYNOPSIS
 
-    rnaseq_auto.pl (v1.0.0)
+    rnaseq_auto.pl (v1.0.1)
     Automatically extracting gene counts from raw RNA-seq files.
 
     Usage:
+    SE mode:
     perl rnaseq_auto.pl -i <filename> -g <genome> -a <annotation> [options]
+    PE mode:
     perl rnaseq_auto.pl -t PE -i <filename_1> -i <filename_2> -g <genome> -a <annotation> [options]
 
+    Required:
+    -i,--in          STR       input file (also accept .gz format), required
+    -g,--genome      STR       reference genome for hisat2 alignment, required
+    -a,--annotation  STR       annotation files - both gtf and gff acceptable, required
 
     Options:
-    -i,--in             input file (also accept .gz format), required
-    -g,--genome         reference genome for hisat2 alignment, required
-    -a,--annotation     annotation files - both gtf and gff acceptable, required
-    -w,--workdir        working directories, default is the current path
-    -t,--type           RNA-seq in single end (SE) or paired end (PE) mode, default: SE
-    --thread            threads for hisat2 and featureCount, default: 1
-    -h,--help           help information
+    -w,--workdir     STR       working directories, default is the current path
+    -t,--type        [SE|PE]   RNA-seq in single end (SE) or paired end (PE) mode, default: SE
+    --thread         INT       threads for hisat2 and featureCount, default: 1
+    --attribute      STR       attribute for featureCounts, default: gene_id
+    -h,--help                  help information
 
 =cut
 
@@ -52,18 +58,19 @@ GetOptions(
     "i|in=s@"           => \(my $input),
     "g|genome=s"        => \(my $genome),
     "a|annotation=s"    => \(my $annotation),
-    "w|workdir"         => \(my $workdir),
+    "w|workdir=s"       => \(my $workdir),
+    "attribute=s"       => \(my $attribute = 'gene_id'),
     "t|type=s"          => \(my $type = 'SE'),
-    "thread=s"          => \(my $thread = '1'),
+    "thread=i"          => \(my $thread = '1'),
     "h|help"            => sub { Getopt::Long::HelpMessage(0) },
 ) or Getopt::Long::HelpMessage(1);
 
-if ( !defined $input) {
-    print STDERR "Error: cannot find input files\n";
+if ( !defined $input ) {
+    print STDERR "Error: cannot find input files.\n";
     die Getopt::Long::HelpMessage(1);
 }
 elsif ( ! @{$input} ) {
-    print STDERR "Error: cannot find input files\n";
+    print STDERR "Error: cannot find input files.\n";
     die Getopt::Long::HelpMessage(1);
 }
 
@@ -72,24 +79,24 @@ if ( !defined $workdir ) {
 }
 
 if ( $type ne "SE" && $type ne "PE") {
-    print STDERR "Error: please correctly entered --type parameter\n";
+    print STDERR "Error: please choose corret mode.\n";
     die Getopt::Long::HelpMessage(1);
 }
 
 if ( !defined $genome ) {
-    print STDERR "Error: cannot find genome\n";
+    print STDERR "Error: cannot find genome.\n";
     die Getopt::Long::HelpMessage(1);
 }
 elsif ( ! path($genome) -> is_file ) {
-    die "Error: cannot open file [$genome]";
+    die "Error: cannot open file [$genome].";
 }
 
 if ( !defined $annotation ) {
-    print STDERR "Error: cannot find annotation\n";
+    print STDERR "Error: cannot find annotation.\n";
     die Getopt::Long::HelpMessage(1);
 }
 elsif ( ! path($annotation) -> is_file ) {
-    die "Error: cannot open file [$annotation]";
+    die "Error: cannot open file [$annotation].";
 }
 
 #----------------------------------------------------------#
@@ -99,29 +106,29 @@ elsif ( ! path($annotation) -> is_file ) {
 # all global variables
 my ($name, $inpath, $suffix, $out_name);
 my @suffixlist = (".fastq.gz", ".fastq.bz2", ".fastq", ".fq.gz", ".fq.bz2", ".fq");
-my @genomsuffix = ("fasta", "fa");
+my @genomsuffix = (".fasta", ".fa");
 my @feature;
 
 # mode selection
 my $in_num = @{$input};
 if ( $in_num == 1 ) {
     if ( $type eq "SE" ) {
-        print STDERR "==> SE mode detected\n";
+        print STDERR "==> SE mode detected.\n";
     }
     else {
-        die "Error: PE mode with only an input file\n";
+        die "Error: PE mode with only an input file.\n";
     }
 }
 elsif ( $in_num == 2 ) {
     if ( $type eq "PE" ) {
-        print STDERR "==> PE mode detected\n";
+        print STDERR "==> PE mode detected.\n";
     }
     else {
-        die "Error: SE mode with two input files, error\n";
+        die "Error: SE mode with two input files, error.\n";
     }
 }
 else {
-    die "Error: input exceed the range\n";
+    die "Error: input exceed the range.\n";
 }
 
 # check index
@@ -154,7 +161,7 @@ if ( $in_num == 1 ) {
     my $path_in = shift (@{$input});
     ($name, $inpath, $suffix) = fileparse ($path_in, @suffixlist);
     if ( $suffix eq "" ) {
-        die "Error: input suffix wrong\n";
+        die "Error: input suffix wrong.\n";
     }
 }
 elsif ( $in_num == 2 ) {
@@ -163,10 +170,10 @@ elsif ( $in_num == 2 ) {
     my ($name_1, $inpath_1, $suffix_1) = fileparse ($path_in_1, @suffixlist);
     my ($name_2, $inpath_2, $suffix_2) = fileparse ($path_in_2, @suffixlist);
     if ( $suffix_1 eq "" || $suffix_2 eq "" ) {
-        die "Error: input suffix wrong\n";
+        die "Error: input suffix wrong.\n";
     }
     elsif ( $inpath_1 ne $inpath_2) {
-        die "Error: input path not consistent\n";
+        die "Error: input path not consistent.\n";
     }
     else {
         my $n1 = $1 if $name_1 =~ /^(.+?)_\d/;
@@ -177,18 +184,24 @@ elsif ( $in_num == 2 ) {
             $suffix = $suffix_1;
         }
         else {
-            die "Error: input name not consistent\n";
+            die "Error: input name not consistent.\n";
         }
     }
 }
 else {
-    die "Error: input exceed the range\n";
+    die "Error: input exceed the range.\n";
 }
 
 # outdir
-my $outdir = $workdir."/result";
-if ( ! -d $outdir ) {
-    mkdir $outdir;
+my $outdir;
+if ( path($workdir) -> is_dir ){
+    $outdir = $workdir."/result";
+    if ( path($outdir) -> is_dir ) {
+        path($outdir) -> mkdir;
+    }
+}
+else {
+    die "Working directory error: [$workdir] is not existed.\n";
 }
 
 $out_name = $outdir."/".$name;
@@ -264,17 +277,22 @@ else {
 my $countfile = $out_name.".tmp.tsv";
 my $featurefile = $out_name.".count.tsv";
 print STDERR "==> Counting reads via featureCounts\n";
-system "featureCounts -T $thread -a $annotation -o $countfile $bamfile";
+system "featureCounts -T $thread -a $annotation -g $attribute -o $countfile $bamfile";
 
-open my $TSV_IN, "<", $countfile;
-while ( <$TSV_IN> ) {
-    chomp;
-    next if /^#/;
-    my @array = split/\t/, $_;
-    my $print = "$array[0]\t$array[6]\n";
-    push (@feature, $print);
+if ( ! glob $countfile ) {
+    die "featureCounts Error!\n";
 }
-close $TSV_IN;
+else {
+    open my $TSV_IN, "<", $countfile;
+    while ( <$TSV_IN> ) {
+        chomp;
+        next if /^#/;
+        my @array = split/\t/, $_;
+        my $print = "$array[0]\t$array[6]\n";
+        push (@feature, $print);
+    }
+    close $TSV_IN;
+}
 
 path("$featurefile") -> spew(@feature);
 
