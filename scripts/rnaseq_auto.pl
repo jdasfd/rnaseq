@@ -8,11 +8,12 @@
 #   Version: 1.0.0
 #
 #   Change logs:
-#   Version 1.0.0 23/05/06: The initial version.
-#   Version 1.0.1 23/07/25: Bug fixes: featureCounts cannot read the attribute;
-#                                      gff2gtf name error;
+#   Version 1.0.0 23-05-06: The initial version.
+#   Version 1.0.1 23-07-25: Bug fixes: gff2gtf name error;
 #                                      mkdir error reported by trim-galore.
 #                                      genome suffix wrong for ht2-index error.
+#                                      glob error so realize by Path::Tiny.
+#   Version 1.1.0 23-07-25: Add new parameter: -attribute for featureCounts
 
 use strict;
 use warnings;
@@ -32,7 +33,7 @@ rnaseq_auto.pl - automatically extract reads count from raw RNA-seq files
 
 =head1 SYNOPSIS
 
-    rnaseq_auto.pl (v1.0.1)
+    rnaseq_auto.pl (v1.1.0)
     Automatically extracting gene counts from raw RNA-seq files.
 
     Usage:
@@ -208,6 +209,10 @@ else {
 }
 
 $out_name = $outdir."/".$name;
+my $samtmp = $out_name.".tmp.sam";
+my $bamfile = $out_name.".sort.bam";
+my $counttmp = $out_name.".tmp.tsv";
+my $featurefile = $out_name.".count.tsv";
 
 #----------------------------------------------------------#
 # main program
@@ -219,8 +224,11 @@ if ( $type eq "SE" ) {
     if ( ! glob $out_name."*_trimmed*" ) {
         my $result_trim = &trim_galore_SE($trim_in, $outdir);
         if ( $result_trim != 0 ) {
-            die "Error: trim_galore wrong\n";
+            die "Error: trim_galore wrong.\n";
         }
+    }
+    else {
+        print STDERR "Already trimmed.\n";
     }
 }
 elsif ( $type eq "PE" ) {
@@ -232,61 +240,69 @@ elsif ( $type eq "PE" ) {
             die "Error: trim_galore wrong\n";
         }
     }
+    else {
+        print STDERR "Already trimmed.\n";
+    }
 }
 
 # ht2-align
 if ( $type eq "SE" ) {
     my $ht_in = $out_name."_trimmed.fq.gz";
-    my $ht_out = $out_name.".tmp.sam";
-    if ( ! glob $ht_out || ! glob $out_name.".sort.bam" ) {
-        my $result_ht = &ht2_align_SE($ht_in, $ht_out, $genom_ref, $thread);
-        if ( $result_ht != 0 ) {
-            die "Error: hisat align wrong\n";
-        }
+    if ( ! path($ht_in) -> is_file ) {
+        die "Error occured in trim_galore part.\n";
     }
     else {
-        print STDERR "==> Hisat2 align result exists\n";
+        if ( path($bamfile) -> is_file || path($samtmp) -> is_file ) {
+            print STDERR "==> Hisat2 align result exists\n";
+        }
+        else {
+            my $result_ht = &ht2_align_SE($ht_in, $samtmp, $genom_ref, $thread);
+            if ( $result_ht != 0 ) {
+                die "Error: hisat align wrong\n";
+            }
+        }
     }
 }
 elsif ( $type eq "PE" ) {
     my $ht_in_1 = $out_name."_1_val_1.fq.gz";
     my $ht_in_2 = $out_name."_2_val_2.fq.gz";
-    my $ht_out = $out_name.".tmp.sam";
-    if ( ! glob $ht_out || ! glob $out_name.".sort.bam" ) {
-        my $result_ht = &ht2_align_PE($ht_in_1, $ht_in_2, $ht_out, $genom_ref, $thread);
-        if ( $result_ht != 0 ) {
-            die "Error: hisat align wrong\n";
+    if ( path($ht_in_1) -> is_file && path($ht_in_2) -> is_file ) {
+        if ( path($samtmp) -> is_file || path($bamfile) -> is_file ) {
+            print STDERR "==> Hisat2 align result exists\n";
+        }
+        else {
+            my $result_ht = &ht2_align_PE($ht_in_1, $ht_in_2, $samtmp, $genom_ref, $thread);
+            if ( $result_ht != 0 ) {
+                die "Error: hisat align wrong.\n";
+            }
         }
     }
     else {
-        print STDERR "==> Hisat2 align result exists\n";
+        die "Error occured in trim_galore part.\n";
     }
 }
 
 # sam2bam
-my $bamfile = $out_name.".sort.bam";
-if ( ! glob $bamfile ) {
+if ( !path($bamfile) -> is_file ) {
     print STDERR "==> Sam to bam converting\n";
-    my $samfile = $out_name.".tmp.sam";
-    system "samtools sort -@ $thread $samfile > $bamfile";
+
+    system "samtools sort -@ $thread $samtmp > $bamfile";
     system "samtools index $bamfile";
-    path($samfile) -> remove if glob $out_name.".tmp.sam";
+    path($samtmp) -> remove if path($samtmp) -> is_file;
 }
 else {
     print STDERR "==> Bam file exists\n";
 }
 
 # feature counts
-my $countfile = $out_name.".tmp.tsv";
-my $featurefile = $out_name.".count.tsv";
 print STDERR "==> Counting reads via featureCounts\n";
-system "featureCounts -T $thread -a $annotation -g $attribute -o $countfile $bamfile";
+system "featureCounts -T $thread -a $annotation -g $attribute -o $counttmp $bamfile";
 
-if ( ! glob $countfile ) {
+if ( !path($counttmp) -> is_file ) {
     die "featureCounts Error!\n";
 }
 else {
-    open my $TSV_IN, "<", $countfile;
+    open my $TSV_IN, "<", $counttmp;
     while ( <$TSV_IN> ) {
         chomp;
         next if /^#/;
