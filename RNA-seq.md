@@ -13,7 +13,7 @@ anchr help
 sudo apt install trim-galore
 brew install brewsci/bio/subread
 brew install brewsci/bio/hisat2
-brew install brewsci/bio/gffread
+brew install gffread
 brew install samtools
 ```
 
@@ -119,4 +119,13 @@ cat info/PE_SRR.lst |
             -g GENOMES/medicago_truncatula/genome.fa \
             -a GENOMES/medicago_truncatula/genome.gtf
     '
+```
+
+- Synchronizing the count result from raw reads
+
+```bash
+mkdir ~/data/rnaseq/result
+cd ~/data/rnaseq/result
+
+rsync -avP name@ip:data/rnaseq/result/*.count.tsv ~/data/rnaseq/result/
 ```
