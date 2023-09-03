@@ -31,11 +31,18 @@ Rscript -e '
 - Data orginated from [neellab/bfg](https://github.com/neellab/bfg/tree/gh-pages).
 
 ```bash
-mkdir -p ~/data/rnaseq/rna_bc
-cd ~/data/rnaseq/rna_bc
+mkdir -p ~/data/rnaseq/rna_bc/info
+cd ~/data/rnaseq/rna_bc/info
 
 # bfg
-git clone https://github.com/neellab/bfg.git
+#git clone https://github.com/neellab/bfg.git
+
+# GSE96058
+wget https://ftp.ncbi.nlm.nih.gov/geo/series/GSE96nnn/GSE96058/suppl/GSE96058_gene_expression_3273_samples_and_136_replicates_transformed.csv.gz
+gzip -d GSE96058_gene_expression_3273_samples_and_136_replicates_transformed.csv.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/geo/series/GSE96nnn/GSE96058/soft/GSE96058_family.soft.gz
+gzip -d
 ```
 
 - Info derived from article supplementary.
@@ -43,41 +50,28 @@ git clone https://github.com/neellab/bfg.git
 The data was collected from the supplementary material directly. All `.xlsx` were collected into `article_SM`.
 
 ```bash
-mkdir -p ~/data/rnaseq/rna_bc/info
 cd ~/data/rnaseq/rna_bc/info
 
-cp ../bfg/data/annotations/cell_line_subtypes.txt.zip .
-cp ../bfg/data/breast_rnaseq_fpkm_nonnormalized.txt.zip .
-cp ../bfg/data/breast_rnaseq_qn.txt.zip .
-
-rm -rf __MACOSX/
-rm *.zip
-
 # converting cr2lf
-for file in cell_line_subtypes breast_rnaseq_qn
-do
-cat ${file}.txt | tr "\r" "\n" > tmp && mv tmp ${file}.txt
-echo >> ${file}.txt
-done
+#for file in cell_line_subtypes breast_rnaseq_qn
+#do
+#cat ${file}.txt | tr "\r" "\n" > tmp && mv tmp ${file}.txt
+#echo >> ${file}.txt
+#done
 
-# extract cell and its subtype info
-cat cell_line_subtypes.txt |
-    tsv-select -H -f cell_line,subtype_neve |
-    perl -nlae '
-        print if /^cell_line/;
-        print "$F[0]\tbasal_A" if $F[1] =~ /basala/;
-        print "$F[0]\tbasal_B" if $F[1] =~ /basalb/;
-        print "$F[0]\tHER2" if $F[1] =~ /her2/;
-        print "$F[0]\tLuminal" if $F[1] =~ /luminal/;
-    '\
-    > cell_anno.tsv
+# extract sample info and scan-b id
+cat GSE96058_family.soft |
+    perl -nle '
+        print if /^!Sample_title.*/;
+        print if /^!Sample_characteristics_ch1\s=\sscan-b.*/;
+    ' \
+    > tmp.txt
 
-cat > tmp.tsv << EOF 
-$(echo -e "H\tbasal_A")
-$(echo -e "I\tbasal_B")
-$(echo -e "J\tHER2")
-$(echo -e "K\tLuminal")
-EOF
+cat tmp.txt | perl -e 'while (<>) {chomp; if ($.%2 != 0) { $_ =~ /^!Sample_title\s=\s(.+)$/; print "$1\t";} else { $_ =~ /^.*id:\sQ\d+\.C\d+\.(.+)$/; print "$1\n";}}' > id_trans.tsv
+
+perl ~/Scripts/fig_table/xlsx2csv.pl -f 41598_2019_48570_MOESM2_ESM.xlsx | sed '1,2d' | mlr --icsv --otsv cat | tsv-select -H -f Assay,AIMS_PAM50 | sed 1d | tsv-select -f 2,1 | tsv-join -f id_trans.tsv -k 2 -a 1 | tsv-select -f 3,1 > id_trans_subtype.tsv
+
+rm tmp.txt
 
 # extract each gene pathway
 rm pathway.tsv gene.tsv
