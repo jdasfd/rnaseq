@@ -22,6 +22,7 @@ use Getopt::Long;
 use File::Basename;
 use Path::Tiny;
 use List::Util;
+use IO::Tee;
 
 #----------------------------------------------------------#
 # GetOpt section
@@ -77,7 +78,14 @@ elsif ( ! @{$input} ) {
 }
 
 if ( !defined $workdir ) {
-    $workdir = Path::Tiny -> cwd;
+    my $current = Path::Tiny -> cwd;
+    $workdir = $current."/result";
+}
+else {
+    if ( $workdir =~ /\/$/ ) {
+        $workdir =~ s/\/$//;
+    }
+    path ($workdir) -> mkdir;
 }
 
 if ( $type ne "SE" && $type ne "PE") {
@@ -105,6 +113,10 @@ elsif ( ! path($annotation) -> is_file ) {
 # init
 #----------------------------------------------------------#
 
+# file output handle
+my $tee_new = IO::Tee -> new ( "> $workdir/log.txt", \*STDERR );
+my $tee_add = IO::Tee -> new ( ">> $workdir/log.txt", \*STDERR );
+
 # all global variables
 my ($name, $inpath, $suffix, $out_name);
 my @suffixlist = (".fastq.gz", ".fastq.bz2", ".fastq", ".fq.gz", ".fq.bz2", ".fq");
@@ -115,46 +127,59 @@ my @feature;
 my $in_num = @{$input};
 if ( $in_num == 1 ) {
     if ( $type eq "SE" ) {
-        print STDERR "==> SE mode detected.\n";
+        print $tee_new "RNA-seq start, SE mode detected.\n";
+        print $tee_add "Genome:$genome.\n";
+        my $in_file = shift (@{$input});
+        print $tee_add "Input:$in_file.\n";
+        print $tee_add "\n";
     }
     else {
-        die "Error: PE mode with only an input file.\n";
+        print $tee_new "Error: PE mode with only an input file.\n";
+        die;
     }
 }
 elsif ( $in_num == 2 ) {
     if ( $type eq "PE" ) {
-        print STDERR "==> PE mode detected.\n";
+        print $tee_new "RNA-seq start, PE mode detected.\n";
+        print $tee_add "Genome:$genome.\n";
+        my $input_string = join ("\s", @{$input});
+        print $tee_add "Input:$input_string.\n";
+        print $tee_add "\n";
     }
     else {
-        die "Error: SE mode with two input files, error.\n";
+        print $tee_new "Error: SE mode with two input files, error.\n";
+        die;
     }
 }
 else {
-    die "Error: input exceed the range.\n";
+    print $tee_new "Error: input exceed the range.\n";
+    die;
 }
 
 # check index
 my ($genom_name, $genom_path, $genom_suffix) = fileparse ($genome, @genomsuffix);
 my $genom_ref = $genom_path.$genom_name;
 if ( glob ("$genom_path"."$genom_name"."*.ht2") ) {
-    print STDERR "==> Hisat2 index exists\n";
+    print $tee_add "==> Hisat2 index exists\n";
 }
 else {
+    print $tee_add "==> Hisat2 genome indexing\n";
     my $result_idx = &ht2_index ($genom_name, $genom_path, $genom_suffix, $thread);
     if ( $result_idx != 0 ) {
-        die "Error: Hisat-index wrong, aborted\n";
+        print $tee_add "Error: Hisat-index wrong, aborted.\n";
+        die;
     }
 }
 
 # check gtf
-if ( $annotation =~ /\.gff$/ ) {
-    print STDERR "==> Converting gff to gtf via gffread\n";
+if ( $annotation =~ /\.gff3?$/ ) {
+    print $tee_add "==> Converting gff to gtf via gffread\n";
     my $gffpath = dirname ($annotation);
     my $gtf = "$gffpath"."/"."$genom_name".".gtf";
     system "gffread $annotation -T -o $gtf";
 }
 elsif ( $annotation =~ /\.gtf/ ) {
-    print STDERR "==> Annotation gtf already exists\n";
+    print $tee_add "==> Annotation gtf already exists\n";
 }
 
 # dealing with filepath and name
@@ -162,7 +187,8 @@ if ( $in_num == 1 ) {
     my $path_in = shift (@{$input});
     ($name, $inpath, $suffix) = fileparse ($path_in, @suffixlist);
     if ( $suffix eq "" ) {
-        die "Error: input suffix wrong.\n";
+        print $tee_add "Error: input suffix wrong.\n";
+        die;
     }
 }
 elsif ( $in_num == 2 ) {
@@ -171,10 +197,12 @@ elsif ( $in_num == 2 ) {
     my ($name_1, $inpath_1, $suffix_1) = fileparse ($path_in_1, @suffixlist);
     my ($name_2, $inpath_2, $suffix_2) = fileparse ($path_in_2, @suffixlist);
     if ( $suffix_1 eq "" || $suffix_2 eq "" ) {
-        die "Error: input suffix wrong.\n";
+        print $tee_add "Error: input suffix wrong.\n";
+        die;
     }
     elsif ( $inpath_1 ne $inpath_2) {
-        die "Error: input path not consistent.\n";
+        print $tee_add "Error: input path not consistent.\n";
+        die;
     }
     else {
         my $n1 = $1 if $name_1 =~ /^(.+?)_\d/;
@@ -185,30 +213,17 @@ elsif ( $in_num == 2 ) {
             $suffix = $suffix_1;
         }
         else {
-            die "Error: input name not consistent.\n";
+            print $tee_add "Error: input name not consistent.\n";
+            die;
         }
     }
 }
 else {
-    die "Error: input exceed the range.\n";
+    print $tee_add "Error: input exceed the range.\n";
+    die;
 }
 
-# outdir
-my $outdir;
-if ( path($workdir) -> is_dir ){
-    $outdir = $workdir."/result";
-    if ( !path($outdir) -> is_dir ) {
-        path($outdir) -> mkdir;
-    }
-    else {
-        print STDERR "$workdir is ready.\n";
-    }
-}
-else {
-    die "Working directory error: [$workdir] is not existed.\n";
-}
-
-$out_name = $outdir."/".$name;
+$out_name = $workdir."/".$name;
 my $samtmp = $out_name.".tmp.sam";
 my $bamfile = $out_name.".sort.bam";
 my $counttmp = $out_name.".tmp.tsv";
@@ -222,26 +237,30 @@ my $featurefile = $out_name.".count.tsv";
 if ( $type eq "SE" ) {
     my $trim_in = $inpath.$name.$suffix;
     if ( ! glob $out_name."*_trimmed*" ) {
-        my $result_trim = &trim_galore_SE($trim_in, $outdir);
+        print $tee_add "==> Trimming adapter for SE\n";
+        my $result_trim = &trim_galore_SE($trim_in, $workdir);
         if ( $result_trim != 0 ) {
-            die "Error: trim_galore wrong.\n";
+            print $tee_add "Error: trim_galore wrong.\n";
+            die;
         }
     }
     else {
-        print STDERR "Already trimmed.\n";
+        print $tee_add "Already trimmed.\n";
     }
 }
 elsif ( $type eq "PE" ) {
     my $trim_in_1 = $inpath.$name."_1".$suffix;
     my $trim_in_2 = $inpath.$name."_2".$suffix;
     if ( ! glob $out_name."*_val*" ) {
-        my $result_trim = &trim_galre_PE($trim_in_1,$trim_in_2, $outdir);
+        print $tee_add "==> Trimming adapter for PE\n";
+        my $result_trim = &trim_galre_PE($trim_in_1,$trim_in_2, $workdir);
         if ( $result_trim != 0 ) {
-            die "Error: trim_galore wrong\n";
+            print $tee_add "Error: trim_galore wrong\n";
+            die;
         }
     }
     else {
-        print STDERR "Already trimmed.\n";
+        print $tee_add "Already trimmed.\n";
     }
 }
 
@@ -249,16 +268,19 @@ elsif ( $type eq "PE" ) {
 if ( $type eq "SE" ) {
     my $ht_in = $out_name."_trimmed.fq.gz";
     if ( ! path($ht_in) -> is_file ) {
-        die "Error occured in trim_galore part.\n";
+        print $tee_add "Error occured in trim_galore part.\n";
+        die;
     }
     else {
         if ( path($bamfile) -> is_file || path($samtmp) -> is_file ) {
-            print STDERR "==> Hisat2 align result exists\n";
+            print $tee_add "Hisat2 align result exists.\n";
         }
         else {
+            print $tee_add "==> Hisat2 alignment SE mode\n";
             my $result_ht = &ht2_align_SE($ht_in, $samtmp, $genom_ref, $thread);
             if ( $result_ht != 0 ) {
-                die "Error: hisat align wrong\n";
+                print $tee_add "Error: hisat align wrong.\n";
+                die;
             }
         }
     }
@@ -268,38 +290,42 @@ elsif ( $type eq "PE" ) {
     my $ht_in_2 = $out_name."_2_val_2.fq.gz";
     if ( path($ht_in_1) -> is_file && path($ht_in_2) -> is_file ) {
         if ( path($samtmp) -> is_file || path($bamfile) -> is_file ) {
-            print STDERR "==> Hisat2 align result exists\n";
+            print $tee_add "Hisat2 align result exists.\n";
         }
         else {
+            print $tee_add "==> Hisat2 alignment PE mode\n";
             my $result_ht = &ht2_align_PE($ht_in_1, $ht_in_2, $samtmp, $genom_ref, $thread);
             if ( $result_ht != 0 ) {
-                die "Error: hisat align wrong.\n";
+                print $tee_add "Error: hisat align wrong.\n";
+                die;
             }
         }
     }
     else {
-        die "Error occured in trim_galore part.\n";
+        print $tee_add "Error occured in trim_galore part.\n";
+        die;
     }
 }
 
 # sam2bam
 if ( !path($bamfile) -> is_file ) {
-    print STDERR "==> Sam to bam converting\n";
+    print $tee_add "==> Sam to bam converting\n";
 
     system "samtools sort -@ $thread $samtmp > $bamfile";
     system "samtools index $bamfile";
     path($samtmp) -> remove if path($samtmp) -> is_file;
 }
 else {
-    print STDERR "==> Bam file exists\n";
+    print $tee_add "==> Bam file exists\n";
 }
 
 # feature counts
-print STDERR "==> Counting reads via featureCounts\n";
+print $tee_add "==> Counting reads via featureCounts\n";
 system "featureCounts -T $thread -a $annotation -g $attribute -o $counttmp $bamfile";
 
 if ( !path($counttmp) -> is_file ) {
-    die "featureCounts Error!\n";
+    print $tee_add "featureCounts Error!\n";
+    die;
 }
 else {
     open my $TSV_IN, "<", $counttmp;
@@ -322,37 +348,38 @@ path("$featurefile") -> spew(@feature);
 # trim_galore 4 cores is the best
 sub trim_galore_SE {
     my ($file, $out) = @_;
-    print STDERR "==> Trimming adapter for SE\n";
+
     my $result = system "trim_galore -j 4 -q 30 --fastqc --length 20 $file -o $out";
     return $result;
 }
 
 sub trim_galre_PE {
     my ($file_5, $file_3, $out) = @_;
-    print STDERR "==> Trimming adapter for PE\n";
+
     my $result = system "trim_galore -j 4 -q 30 --fastqc --length 20 --paired $file_5 $file_3 -o $out";
     return $result;
 }
 
 sub ht2_index {
     my ($GENOM, $PATH, $SUFFIX, $THREAD) = @_;
+
     my $OLD = "$PATH"."$GENOM"."$SUFFIX";
     my $NEW = "$PATH"."$GENOM";
-    print STDERR "==> Hisat2 genome indexing\n";
+
     my $result = system "hisat2-build -p $THREAD $OLD $NEW";
     return $result;
 }
 
 sub ht2_align_SE {
     my ($HT_IN, $HT_OUT, $REF, $THREAD) = @_;
-    print STDERR "==> Hisat2 alignment SE mode\n";
+
     my $result = system "hisat2 -p $THREAD -x $REF -U $HT_IN -S $HT_OUT";
     return $result;
 }
 
 sub ht2_align_PE {
     my ($HT_IN_1, $HT_IN_2, $HT_OUT, $REF, $THREAD) = @_;
-    print STDERR "==> Hisat2 alignment PE mode\n";
+
     my $result = system "hisat2 -p $THREAD -x $REF -1 $HT_IN_1 -2 $HT_IN_2 -S $HT_OUT";
     return $result;
 }
