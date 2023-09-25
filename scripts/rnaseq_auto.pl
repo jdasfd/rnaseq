@@ -13,7 +13,9 @@
 #                                      mkdir error reported by trim-galore.
 #                                      genome suffix wrong for ht2-index error.
 #                                      glob error so realize by Path::Tiny.
-#   Version 1.1.0 23-07-25: Add new parameter: -attribute for featureCounts
+#   Version 1.1.0 23-07-25: Add new parameter: -attribute for featureCounts.
+#   Version 1.1.1 23-09-25: Bug fixes: mkdir not work; gff3 not recognized.
+#                           Add: log files to record all processes.
 
 use strict;
 use warnings;
@@ -34,7 +36,7 @@ rnaseq_auto.pl - automatically extract reads count from raw RNA-seq files
 
 =head1 SYNOPSIS
 
-    rnaseq_auto.pl (v1.1.0)
+    rnaseq_auto.pl (v1.1.1)
     Automatically extracting gene counts from raw RNA-seq files.
 
     Usage:
