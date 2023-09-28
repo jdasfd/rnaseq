@@ -16,6 +16,8 @@
 #   Version 1.1.0 23-07-25: Add new parameter: -attribute for featureCounts.
 #   Version 1.1.1 23-09-25: Bug fixes: mkdir not work; gff3 not recognized.
 #                           Add: log files to record all processes.
+#   Version 1.1.2 23-09-26: Bug fixes: log to avoid covering old log.
+#                           Add: local time to record each task.
 
 use strict;
 use warnings;
@@ -71,7 +73,7 @@ GetOptions(
 ) or Getopt::Long::HelpMessage(1);
 
 if ( !defined $input ) {
-    print STDERR "Error: cannot find input files.\n";
+    print STDERR "Error: cannot find input file.\n";
     die Getopt::Long::HelpMessage(1);
 }
 elsif ( ! @{$input} ) {
@@ -79,19 +81,8 @@ elsif ( ! @{$input} ) {
     die Getopt::Long::HelpMessage(1);
 }
 
-if ( !defined $workdir ) {
-    my $current = Path::Tiny -> cwd;
-    $workdir = $current."/result";
-}
-else {
-    if ( $workdir =~ /\/$/ ) {
-        $workdir =~ s/\/$//;
-    }
-    path ($workdir) -> mkdir;
-}
-
 if ( $type ne "SE" && $type ne "PE") {
-    print STDERR "Error: please choose corret mode.\n";
+    print STDERR "Error: please choose correct mode.\n";
     die Getopt::Long::HelpMessage(1);
 }
 
@@ -111,12 +102,26 @@ elsif ( ! path($annotation) -> is_file ) {
     die "Error: cannot open file [$annotation].";
 }
 
+if ( !defined $workdir ) {
+    my $current = Path::Tiny -> cwd;
+    $workdir = $current."/result";
+}
+else {
+    if ( $workdir =~ /\/$/ ) {
+        $workdir =~ s/\/$//;
+    }
+    path ($workdir) -> mkdir;
+}
+
+unless ( path("$workdir/log.txt") -> is_file ) {
+    path("$workdir/log.txt") -> touch;
+}
+
 #----------------------------------------------------------#
 # init
 #----------------------------------------------------------#
 
 # file output handle
-my $tee_new = IO::Tee -> new ( "> $workdir/log.txt", \*STDERR );
 my $tee_add = IO::Tee -> new ( ">> $workdir/log.txt", \*STDERR );
 
 # all global variables
@@ -129,59 +134,36 @@ my @feature;
 my $in_num = @{$input};
 if ( $in_num == 1 ) {
     if ( $type eq "SE" ) {
-        print $tee_new "RNA-seq start, SE mode detected.\n";
+        my $time = localtime;
+        print $tee_add "RNA-seq start at $time, SE mode detected.\n";
         print $tee_add "Genome:$genome.\n";
         my $in_file = shift (@{$input});
         print $tee_add "Input:$in_file.\n";
         print $tee_add "\n";
     }
     else {
-        print $tee_new "Error: PE mode with only an input file.\n";
+        print $tee_add "Error: PE mode with only an input file.\n";
         die;
     }
 }
 elsif ( $in_num == 2 ) {
     if ( $type eq "PE" ) {
-        print $tee_new "RNA-seq start, PE mode detected.\n";
+        my $time = localtime;
+        print $tee_add "RNA-seq start at $time, PE mode detected.\n";
         print $tee_add "Genome:$genome.\n";
-        my $input_string = join ("\s", @{$input});
-        print $tee_add "Input:$input_string.\n";
+        for (@{$input}) {
+            print $tee_add "Input: $_.\n";
+        }
         print $tee_add "\n";
     }
     else {
-        print $tee_new "Error: SE mode with two input files, error.\n";
+        print $tee_add "Error: SE mode with two input files, error.\n";
         die;
     }
 }
 else {
-    print $tee_new "Error: input exceed the range.\n";
+    print $tee_add "Error: input exceed the range.\n";
     die;
-}
-
-# check index
-my ($genom_name, $genom_path, $genom_suffix) = fileparse ($genome, @genomsuffix);
-my $genom_ref = $genom_path.$genom_name;
-if ( glob ("$genom_path"."$genom_name"."*.ht2") ) {
-    print $tee_add "==> Hisat2 index exists\n";
-}
-else {
-    print $tee_add "==> Hisat2 genome indexing\n";
-    my $result_idx = &ht2_index ($genom_name, $genom_path, $genom_suffix, $thread);
-    if ( $result_idx != 0 ) {
-        print $tee_add "Error: Hisat-index wrong, aborted.\n";
-        die;
-    }
-}
-
-# check gtf
-if ( $annotation =~ /\.gff3?$/ ) {
-    print $tee_add "==> Converting gff to gtf via gffread\n";
-    my $gffpath = dirname ($annotation);
-    my $gtf = "$gffpath"."/"."$genom_name".".gtf";
-    system "gffread $annotation -T -o $gtf";
-}
-elsif ( $annotation =~ /\.gtf/ ) {
-    print $tee_add "==> Annotation gtf already exists\n";
 }
 
 # dealing with filepath and name
@@ -230,6 +212,32 @@ my $samtmp = $out_name.".tmp.sam";
 my $bamfile = $out_name.".sort.bam";
 my $counttmp = $out_name.".tmp.tsv";
 my $featurefile = $out_name.".count.tsv";
+
+# check index
+my ($genom_name, $genom_path, $genom_suffix) = fileparse ($genome, @genomsuffix);
+my $genom_ref = $genom_path.$genom_name;
+if ( glob ("$genom_path"."$genom_name"."*.ht2") ) {
+    print $tee_add "==> Hisat2 index exists\n";
+}
+else {
+    print $tee_add "==> Hisat2 genome indexing\n";
+    my $result_idx = &ht2_index ($genom_name, $genom_path, $genom_suffix, $thread);
+    if ( $result_idx != 0 ) {
+        print $tee_add "Error: Hisat-index wrong, aborted.\n";
+        die;
+    }
+}
+
+# check gtf
+if ( $annotation =~ /\.gff3?$/ ) {
+    print $tee_add "==> Converting gff to gtf via gffread\n";
+    my $gffpath = dirname ($annotation);
+    my $gtf = "$gffpath"."/"."$genom_name".".gtf";
+    system "gffread $annotation -T -o $gtf";
+}
+elsif ( $annotation =~ /\.gtf/ ) {
+    print $tee_add "==> Annotation gtf already exists\n";
+}
 
 #----------------------------------------------------------#
 # main program
@@ -342,6 +350,10 @@ else {
 }
 
 path("$featurefile") -> spew(@feature);
+
+# final
+my $time = localtime;
+print $tee_add "All processes completed at $time!\n";
 
 #----------------------------------------------------------#
 # sub-program
