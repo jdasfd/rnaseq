@@ -18,6 +18,7 @@
 #                           Add: log files to record all processes.
 #   Version 1.1.2 23-09-26: Bug fixes: log to avoid covering old log.
 #                           Add: local time to record each task.
+#   Version 1.1.3 23-09-28: Bug fixes: gtf and gff/gff3 conversion but featureCount failed.
 
 use strict;
 use warnings;
@@ -38,7 +39,7 @@ rnaseq_auto.pl - automatically extract reads count from raw RNA-seq files
 
 =head1 SYNOPSIS
 
-    rnaseq_auto.pl (v1.1.1)
+    rnaseq_auto.pl (v1.1.3)
     Automatically extracting gene counts from raw RNA-seq files.
 
     Usage:
@@ -122,6 +123,7 @@ unless ( path("$workdir/log.txt") -> is_file ) {
 #----------------------------------------------------------#
 
 # file output handle
+my $gtf;
 my $tee_add = IO::Tee -> new ( ">> $workdir/log.txt", \*STDERR );
 
 # all global variables
@@ -232,11 +234,12 @@ else {
 if ( $annotation =~ /\.gff3?$/ ) {
     print $tee_add "==> Converting gff to gtf via gffread\n";
     my $gffpath = dirname ($annotation);
-    my $gtf = "$gffpath"."/"."$genom_name".".gtf";
+    $gtf = "$gffpath"."/"."$genom_name".".gtf";
     system "gffread $annotation -T -o $gtf";
 }
 elsif ( $annotation =~ /\.gtf/ ) {
     print $tee_add "==> Annotation gtf already exists\n";
+    $gtf = $annotation;
 }
 
 #----------------------------------------------------------#
@@ -331,7 +334,7 @@ else {
 
 # feature counts
 print $tee_add "==> Counting reads via featureCounts\n";
-system "featureCounts -T $thread -a $annotation -g $attribute -o $counttmp $bamfile";
+system "featureCounts -T $thread -a $gtf -g $attribute -o $counttmp $bamfile";
 
 if ( !path($counttmp) -> is_file ) {
     print $tee_add "featureCounts Error!\n";
@@ -397,3 +400,20 @@ sub ht2_align_PE {
     my $result = system "hisat2 -p $THREAD -x $REF -1 $HT_IN_1 -2 $HT_IN_2 -S $HT_OUT";
     return $result;
 }
+
+=head1 VERSION
+
+1.1.3
+
+=head1 AUTHORS
+
+Yuqian Jiang, yuqian_j@outlook.com
+
+=head1 COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2023 by Yuqian Jiang.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
+
+=cut
