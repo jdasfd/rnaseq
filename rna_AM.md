@@ -38,3 +38,22 @@ mv Rhizophagus_irregularis_DAOM197198.gff3 Rir_DAOM197198_2023.gff3
 mv Rhizophagus_irregularis_DAOM197198_proteins_Illumina+ONT_curated.fa Rir_DAOM197198_2023.pep
 ```
 
+## Deal with RNA-seq
+
+Using `rnaseq_auto.pl` to analyse different raw seq data.
+
+```bash
+cd ~/data/rnaseq/rna_AM
+
+for group in A B
+do
+    for i in {1..3}
+    do
+        perl ../scripts/rnaseq_auto.pl -t PE -i SEQ/${group}${i}_1.fq.gz -i SEQ/${group}${i}_2.fq.gz \
+            -g GENOME/Rir_DAOM197198_2023/Rir_DAOM197198_2023.fa \
+            -a GENOME/Rir_DAOM197198_2023/Rir_DAOM197198_2023.gff3 \
+            -w result/Rir_DAOM197198_${group} \
+            --thread 12
+    done
+done
+```
