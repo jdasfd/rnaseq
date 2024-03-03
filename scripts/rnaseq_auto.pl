@@ -19,6 +19,8 @@
 #   Version 1.1.2 23-09-26: Bug fixes: log to avoid covering old log.
 #                           Add: local time to record each task.
 #   Version 1.1.3 23-09-28: Bug fixes: gtf and gff/gff3 conversion but featureCount failed.
+#   Version 1.2.1 24-03-03: Bug fixes: the whole name before _1/_2 PE will be treated as the name.
+#                           Add: judge the different mode for featureCounts.
 
 use strict;
 use warnings;
@@ -39,7 +41,7 @@ rnaseq_auto.pl - automatically extract reads count from raw RNA-seq files
 
 =head1 SYNOPSIS
 
-    rnaseq_auto.pl (v1.1.3)
+    rnaseq_auto.pl (v1.2.1)
     Automatically extracting gene counts from raw RNA-seq files.
 
     Usage:
@@ -191,8 +193,8 @@ elsif ( $in_num == 2 ) {
         die;
     }
     else {
-        my $n1 = $1 if $name_1 =~ /^(.+?)_\d/;
-        my $n2 = $1 if $name_2 =~ /^(.+?)_\d/;
+        my $n1 = $1 if $name_1 =~ /^(.+)_[1|2]$/;
+        my $n2 = $1 if $name_2 =~ /^(.+)_[1|2]$/;
         if ( $n1 eq $n2 ) {
             $name = $n1;
             $inpath = $inpath_1;
@@ -334,7 +336,12 @@ else {
 
 # feature counts
 print $tee_add "==> Counting reads via featureCounts\n";
-system "featureCounts -T $thread -a $gtf -g $attribute -o $counttmp $bamfile";
+if ( $type eq "SE" ) {
+    system "featureCounts -T $thread -a $gtf -g $attribute -o $counttmp $bamfile";
+}
+elsif ( $type eq "PE" ) {
+    system "featureCounts -p -T $thread -a $gtf -g $attribute -o $counttmp $bamfile";
+}
 
 if ( !path($counttmp) -> is_file ) {
     print $tee_add "featureCounts Error!\n";
@@ -403,7 +410,7 @@ sub ht2_align_PE {
 
 =head1 VERSION
 
-1.1.3
+1.2.1
 
 =head1 AUTHORS
 
