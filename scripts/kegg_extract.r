@@ -6,6 +6,7 @@
 
 # Usage
 # Rscript kegg_extract.r <hsa_number>
+# after running the above code, a <hsa_number>.txt will be generated
 
 # If there is anything wrong, please following the steps here:
 
